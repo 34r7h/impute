@@ -62,15 +62,19 @@ node examples/end-to-end.mjs   # human approval → ML-DSA identity → attestat
 
 ## Modules
 
-`impute/keys` (Tier-1 ML-DSA) · `impute/attest` (TEE attestation) · `impute/zsp` (Tier-2
-capability tokens) · `impute/hmac` (Tier-3 Blake3 MAC) · `impute/wire` (canonical codec +
-`signature_scheme` byte) · `impute/tier0` (Tier-0 human clear-sign verify) — all re-exported
-from the package root.
+**Core** (re-exported from the package root): `impute/keys` (Tier-1 ML-DSA) · `impute/attest`
+(TEE attestation) · `impute/zsp` (Tier-2 capability tokens) · `impute/hmac` (Tier-3 Blake3 MAC)
+· `impute/wire` (canonical codec + `signature_scheme` byte) · `impute/tier0` (Tier-0 human
+clear-sign verify).
+
+**Integration adapters** (subpath imports): `impute/ens` (agent identity + discovery via ENS
+subnames & text records) · `impute/erc8004` (on-chain agent registry + BigQuery reputation) ·
+`impute/circle` (Circle W3S Programmable-Wallets — real agent-to-agent USDC settlement).
 
 ## Docs
 
 - [`SPEC.md`](./SPEC.md) — the protocol, tier by tier
-- [`docs/SETTLEMENT.md`](./docs/SETTLEMENT.md) — dual-rail x402 settlement (Base + Arc/Circle)
+- [`docs/SETTLEMENT.md`](./docs/SETTLEMENT.md) — x402 rails (Base + Arc) + Circle W3S wallet settlement
 - [`docs/LEDGER_TIER0.md`](./docs/LEDGER_TIER0.md) — Tier-0 / Ledger design + MAYO SDK feedback
 
 ## Why

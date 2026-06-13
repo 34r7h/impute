@@ -57,6 +57,14 @@
       "types": "./dist/src/verify.d.ts",
       "default": "./dist/src/verify.js"
     },
+    "./ens": {
+      "types": "./dist/src/ens/index.d.ts",
+      "default": "./dist/src/ens/index.js"
+    },
+    "./erc8004": {
+      "types": "./dist/src/erc8004/index.d.ts",
+      "default": "./dist/src/erc8004/index.js"
+    },
     "./circle": {
       "types": "./dist/src/circle/index.d.ts",
       "default": "./dist/src/circle/index.js"

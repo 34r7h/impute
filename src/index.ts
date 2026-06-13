@@ -13,6 +13,7 @@ export * from './keys.js';
 export * from './attest.js';
 export * from './zsp.js';
 export * from './wire.js';
+export * from './hmac.js';
 
 export const VERSION = '0.0.1';
 

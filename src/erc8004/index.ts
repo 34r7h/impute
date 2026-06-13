@@ -100,16 +100,16 @@ export class ReputationEngine {
     if (fingerprint !== undefined && !/^[0-9a-f]{8,64}$/.test(fingerprint)) {
       throw new ImputeError('bad-fingerprint', 'reputation query fingerprint must be lowercase hex');
     }
-    const filter = fingerprint ? `WHERE fingerprint = '${fingerprint}'` : '';
+    const filter = fingerprint ? `WHERE from_address = '0x${fingerprint}'` : '';
     return `
       SELECT 
-        fingerprint,
+        from_address as fingerprint,
         COUNT(*) as verifiedTaskCount,
-        SUM(payment_amount) as totalVolume,
+        SUM(value) as totalVolume,
         LOG(COUNT(*) + 1) * 10 as score -- Example logarithmic scoring
-      FROM \`handoff_dataset.verified_tasks\`
+      FROM \`bigquery-public-data.crypto_ethereum.traces\`
       ${filter}
-      GROUP BY fingerprint
+      GROUP BY from_address
       ORDER BY score DESC
     `.trim();
   }
@@ -122,6 +122,7 @@ export class ReputationEngine {
     const options = {
       query,
       location: 'US',
+      maximumBytesBilled: '10000000000', // 10GB cap
     };
 
     try {

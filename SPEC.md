@@ -82,10 +82,19 @@ SignedZspToken { token, sig (ML-DSA over canonical bytes), pub }
   knowing anything about that app. handoff maps `update_task{in_progress}` →
   mint, `verify_task` / TTL → burn.
 
-Verification checks, in order: signature valid → `scheme` is an agent scheme →
-`sub` matches the presented identity → now within `[nbf, exp)` → requested action
-∈ `scope` → `jti` not revoked. The first failure returns a machine-readable
-`reason`.
+Verification is **two explicit steps**, never collapsed (collapsing them is the
+classic capability footgun — treating "valid token" as "may do anything"):
+
+1. **`verifyZspToken(token)` — authenticity + liveness.** Signature valid →
+   `scheme` is an agent scheme → `sub` matches the signer's key → now within
+   `[nbf, exp)` → `jti` not revoked. Answers *"is this a genuine, live token from
+   its claimed subject?"* — it does **not** look at scope or audience.
+2. **`authorizeZspToken(token, {action, aud})` — capability.** Runs step 1, then
+   requires `aud` to match and `action ∈ scope`. **`action` and `aud` are required
+   arguments**, so there is no permissive path: every authorization names exactly
+   what it grants. Answers *"may this token perform `action` on `aud` right now?"*
+
+Each returns an explicit `{ ok, reason }`; the first failing check sets the reason.
 
 ---
 

@@ -5,6 +5,7 @@ import { generateAgentKeyPair, sign, fingerprint } from '../src/keys.js';
 import {
   mintZspToken,
   verifyZspToken,
+  authorizeZspToken,
   canonicalTokenBytes,
   createCapabilityManager,
 } from '../src/zsp.js';
@@ -12,31 +13,32 @@ import { SignatureScheme, type ZspToken } from '../src/types.js';
 
 const NOW = 1_900_000_000; // fixed clock for deterministic time checks
 
-test('mint -> verify: a scoped, in-window token for the right audience passes', () => {
+test('mint -> authorize: a scoped, in-window token for the right action+audience passes', () => {
   const kp = generateAgentKeyPair();
   const cap = mintZspToken(kp, { aud: 'handoff:request:963632e8', scope: ['update_task', 'submit_result'], ttlSeconds: 300, nbf: NOW });
-  const r = verifyZspToken(cap, { action: 'update_task', aud: 'handoff:request:963632e8', now: NOW + 10 });
+  const r = authorizeZspToken(cap, { action: 'update_task', aud: 'handoff:request:963632e8', now: NOW + 10 });
   assert.equal(r.ok, true);
   assert.equal(cap.token.sub, fingerprint(kp.params, kp.publicKey));
   assert.equal(cap.token.scheme, SignatureScheme.AgentMlDsa65);
 });
 
-test('out-of-scope action is dropped even with a valid signature', () => {
+test('validity is not authorization: a valid token is still denied an out-of-scope action', () => {
   const kp = generateAgentKeyPair();
   const cap = mintZspToken(kp, { aud: 'h', scope: ['update_task'], ttlSeconds: 300, nbf: NOW });
-  assert.deepEqual(verifyZspToken(cap, { action: 'delete_project', now: NOW + 1 }), { ok: false, reason: 'out-of-scope' });
+  assert.equal(verifyZspToken(cap, { now: NOW + 1 }).ok, true); // genuine + live
+  assert.deepEqual(authorizeZspToken(cap, { action: 'delete_project', aud: 'h', now: NOW + 1 }), { ok: false, reason: 'out-of-scope' });
 });
 
-test('wrong audience is rejected', () => {
+test('wrong audience is rejected even when the action is in scope', () => {
   const kp = generateAgentKeyPair();
   const cap = mintZspToken(kp, { aud: 'project-A', scope: ['x'], ttlSeconds: 300, nbf: NOW });
-  assert.deepEqual(verifyZspToken(cap, { aud: 'project-B', now: NOW + 1 }), { ok: false, reason: 'wrong-audience' });
+  assert.deepEqual(authorizeZspToken(cap, { action: 'x', aud: 'project-B', now: NOW + 1 }), { ok: false, reason: 'wrong-audience' });
 });
 
 test('expired and not-yet-valid windows are enforced', () => {
   const kp = generateAgentKeyPair();
   const cap = mintZspToken(kp, { aud: 'h', scope: ['x'], ttlSeconds: 60, nbf: NOW });
-  assert.deepEqual(verifyZspToken(cap, { now: cap.token.exp }), { ok: false, reason: 'expired' });       // exp is exclusive
+  assert.deepEqual(verifyZspToken(cap, { now: cap.token.exp }), { ok: false, reason: 'expired' }); // exp is exclusive
   assert.deepEqual(verifyZspToken(cap, { now: NOW - 1 }), { ok: false, reason: 'not-yet-valid' });
 });
 
@@ -44,10 +46,10 @@ test('a tampered token (scope widened after mint) fails the signature check', ()
   const kp = generateAgentKeyPair();
   const cap = mintZspToken(kp, { aud: 'h', scope: ['read'], ttlSeconds: 300, nbf: NOW });
   cap.token.scope.push('write'); // attacker tries to widen privilege
-  assert.deepEqual(verifyZspToken(cap, { action: 'write', now: NOW + 1 }), { ok: false, reason: 'bad-signature' });
+  assert.deepEqual(authorizeZspToken(cap, { action: 'write', aud: 'h', now: NOW + 1 }), { ok: false, reason: 'bad-signature' });
 });
 
-test('a token signed by A but presented with B\'s public key is rejected', () => {
+test("a token signed by A but presented with B's public key is rejected", () => {
   const a = generateAgentKeyPair();
   const b = generateAgentKeyPair();
   const cap = mintZspToken(a, { aud: 'h', scope: ['x'], ttlSeconds: 300, nbf: NOW });
@@ -84,7 +86,7 @@ test('canonical encoding is independent of property order (signer/verifier agree
   );
 });
 
-test('capability manager mints, burns (revokes), and fires lifecycle hooks', () => {
+test('capability manager mints, authorizes, burns (revokes), and fires lifecycle hooks', () => {
   const minted: string[] = [];
   const burned: Array<[string, string]> = [];
   const mgr = createCapabilityManager({
@@ -93,9 +95,9 @@ test('capability manager mints, burns (revokes), and fires lifecycle hooks', () 
   });
   const kp = generateAgentKeyPair();
   const cap = mgr.mint(kp, { aud: 'h', scope: ['update_task'], ttlSeconds: 300, nbf: NOW });
-  assert.equal(mgr.verify(cap, { action: 'update_task', now: NOW + 1 }).ok, true);
+  assert.equal(mgr.authorize(cap, { action: 'update_task', aud: 'h', now: NOW + 1 }).ok, true);
   mgr.burn(cap.token.jti, 'verified');
-  assert.deepEqual(mgr.verify(cap, { action: 'update_task', now: NOW + 1 }), { ok: false, reason: 'revoked' });
+  assert.deepEqual(mgr.authorize(cap, { action: 'update_task', aud: 'h', now: NOW + 1 }), { ok: false, reason: 'revoked' });
   assert.deepEqual(minted, [cap.token.jti]);
   assert.deepEqual(burned, [[cap.token.jti, 'verified']]);
 });

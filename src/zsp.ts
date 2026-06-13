@@ -85,12 +85,8 @@ export function mintZspToken(kp: AgentKeyPair, p: MintParams): SignedZspToken {
   return { token, sig: bytesToHex(sig), pub: bytesToHex(kp.publicKey) };
 }
 
-/** What to check a presented token against. */
-export interface ZspCheck {
-  /** Require this action to be in the token's scope. */
-  action?: string;
-  /** Require the token's audience to equal this. */
-  aud?: string;
+/** Options for checking a token's authenticity + liveness (NOT its scope/audience). */
+export interface VerifyOptions {
   /** Override "now" (unix seconds) — for testing / deterministic verification. */
   now?: number;
   /** Return true if a jti has been revoked/burned. */
@@ -98,12 +94,16 @@ export interface ZspCheck {
 }
 
 /**
- * Verify a presented ZSP token. Checks, in order: signature over the canonical
+ * Verify a token's AUTHENTICITY and LIVENESS only: signature over the canonical
  * bytes → scheme is a Tier-1 agent scheme → subject binds to the signer's key →
- * inside [nbf, exp) → audience → action in scope → not revoked. Returns an
- * explicit `{ ok, reason }`; the first failing check sets the reason.
+ * inside [nbf, exp) → not revoked. The first failing check sets the reason.
+ *
+ * This deliberately does NOT check scope or audience. Use {@link authorizeZspToken}
+ * to gate a specific action — separating "is this a genuine, live token?" from
+ * "may it do X here?" prevents the classic footgun of treating a valid token as
+ * permission to do anything (cf. unchecked-`aud` JWT bugs).
  */
-export function verifyZspToken(signed: SignedZspToken, check: ZspCheck = {}): VerifyResult {
+export function verifyZspToken(signed: SignedZspToken, opts: VerifyOptions = {}): VerifyResult {
   const { token, sig, pub } = signed ?? ({} as SignedZspToken);
   if (!token || token.v !== 1) return { ok: false, reason: 'bad-token' };
   const params = PARAMS_FOR_SCHEME[token.scheme];
@@ -124,14 +124,31 @@ export function verifyZspToken(signed: SignedZspToken, check: ZspCheck = {}): Ve
   // The token's subject must be the signer's own fingerprint (binds capability to identity).
   if (token.sub !== fingerprint(params, pubBytes)) return { ok: false, reason: 'subject-mismatch' };
 
-  const now = check.now ?? Math.floor(Date.now() / 1000);
+  const now = opts.now ?? Math.floor(Date.now() / 1000);
   if (now < token.nbf) return { ok: false, reason: 'not-yet-valid' };
   if (now >= token.exp) return { ok: false, reason: 'expired' };
+  if (opts.isRevoked?.(token.jti)) return { ok: false, reason: 'revoked' };
 
-  if (check.aud !== undefined && check.aud !== token.aud) return { ok: false, reason: 'wrong-audience' };
-  if (check.action !== undefined && !token.scope.includes(check.action)) return { ok: false, reason: 'out-of-scope' };
-  if (check.isRevoked?.(token.jti)) return { ok: false, reason: 'revoked' };
+  return { ok: true };
+}
 
+/** A capability request: which `action`, on which `aud`. Both are REQUIRED — you cannot authorize without naming both. */
+export interface AuthorizeRequest extends VerifyOptions {
+  action: string;
+  aud: string;
+}
+
+/**
+ * Authorize a specific action. The token must pass {@link verifyZspToken} AND its
+ * audience must equal `req.aud` AND `req.action` must be in its scope. Because
+ * `action` and `aud` are required, there is no permissive path: every
+ * authorization names exactly what it grants.
+ */
+export function authorizeZspToken(signed: SignedZspToken, req: AuthorizeRequest): VerifyResult {
+  const valid = verifyZspToken(signed, { now: req.now, isRevoked: req.isRevoked });
+  if (!valid.ok) return valid;
+  if (signed.token.aud !== req.aud) return { ok: false, reason: 'wrong-audience' };
+  if (!signed.token.scope.includes(req.action)) return { ok: false, reason: 'out-of-scope' };
   return { ok: true };
 }
 
@@ -144,10 +161,13 @@ export interface ZspHooks {
   onBurn?(jti: string, reason: BurnReason): void;
 }
 
-/** A small stateful manager: mints, tracks revocations, burns, and verifies against its own revoke set. */
+/** A small stateful manager: mints, tracks revocations, burns, and checks against its own revoke set. */
 export interface CapabilityManager {
   mint(kp: AgentKeyPair, p: MintParams): SignedZspToken;
-  verify(signed: SignedZspToken, check?: Omit<ZspCheck, 'isRevoked'>): VerifyResult;
+  /** Authenticity + liveness only (auto-applies this manager's revoke set). */
+  verify(signed: SignedZspToken, opts?: Omit<VerifyOptions, 'isRevoked'>): VerifyResult;
+  /** Full capability check — `action` + `aud` required (auto-applies the revoke set). */
+  authorize(signed: SignedZspToken, req: Omit<AuthorizeRequest, 'isRevoked'>): VerifyResult;
   burn(jti: string, reason: Exclude<BurnReason, 'expired'>): void;
   isRevoked(jti: string): boolean;
 }
@@ -155,18 +175,23 @@ export interface CapabilityManager {
 /**
  * Create a capability manager with optional lifecycle hooks. This is the adapter
  * surface for a host: call `mint` on task claim, `burn(jti,'verified')` on verify,
- * and `verify` enforces scope/TTL/revocation automatically.
+ * and `authorize(signed, {action, aud})` to gate each privileged call. Revocation
+ * is applied automatically from this manager's burn set.
  */
 export function createCapabilityManager(hooks: ZspHooks = {}): CapabilityManager {
   const revoked = new Set<string>();
+  const isRevoked = (jti: string) => revoked.has(jti);
   return {
     mint(kp, p) {
       const signed = mintZspToken(kp, p);
       hooks.onMint?.(signed.token);
       return signed;
     },
-    verify(signed, check = {}) {
-      return verifyZspToken(signed, { ...check, isRevoked: (jti) => revoked.has(jti) });
+    verify(signed, opts = {}) {
+      return verifyZspToken(signed, { ...opts, isRevoked });
+    },
+    authorize(signed, req) {
+      return authorizeZspToken(signed, { ...req, isRevoked });
     },
     burn(jti, reason) {
       if (!revoked.has(jti)) {
@@ -174,8 +199,6 @@ export function createCapabilityManager(hooks: ZspHooks = {}): CapabilityManager
         hooks.onBurn?.(jti, reason);
       }
     },
-    isRevoked(jti) {
-      return revoked.has(jti);
-    },
+    isRevoked,
   };
 }

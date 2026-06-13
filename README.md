@@ -31,7 +31,7 @@ npm install impute
 
 ```ts
 import { generateAgentKeyPair, publicIdentity } from 'impute/keys';
-import { mintZspToken, verifyZspToken } from 'impute/zsp';
+import { mintZspToken, authorizeZspToken } from 'impute/zsp';
 
 // Tier-1: an agent gets a post-quantum identity.
 const agent = generateAgentKeyPair();           // ml-dsa-65 by default
@@ -45,9 +45,10 @@ const cap = mintZspToken(agent, {
   ttlSeconds: 300,
 });
 
-// A verifier checks it with only the token (no shared secret).
-console.log(verifyZspToken(cap, { action: 'update_task' }));   // { ok: true }
-console.log(verifyZspToken(cap, { action: 'delete_project' })); // { ok: false, reason: 'out-of-scope' }
+// Authorize a specific action with only the token (no shared secret).
+// action + aud are required, so scope/audience can never be skipped by accident.
+console.log(authorizeZspToken(cap, { action: 'update_task', aud: 'handoff:request:963632e8' }));   // { ok: true }
+console.log(authorizeZspToken(cap, { action: 'delete_project', aud: 'handoff:request:963632e8' })); // { ok: false, reason: 'out-of-scope' }
 ```
 
 ## Why

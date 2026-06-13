@@ -14,6 +14,7 @@ export * from './attest.js';
 export * from './zsp.js';
 export * from './wire.js';
 export * from './hmac.js';
+export * from './tier0.js';
 
 export const VERSION = '0.1.0';
 

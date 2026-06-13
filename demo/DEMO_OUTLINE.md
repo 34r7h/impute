@@ -51,6 +51,13 @@ This document outlines the demo flow, slide deck structure, and honest-scope def
     *   Cryptographic non-repudiation for every micro-action.
     *   Real-time reputation queryable on-chain.
 
+### Slide 6: Verification Audit Trail (Independent Swarm Governance)
+*   **Visual**: A tabular log of completed tasks showing strict builder-verifier separation (verifier ≠ builder) and zero self-verification violations.
+*   **Points**:
+    *   **11/11 Verified Tasks**: Real-world audit trail as a natural byproduct of swarm operation.
+    *   **Separation Policy**: Advisor settles Goal A (Claude's code); Claude/Orchestrator settles Goals B & E (Gemini's code). No builder verifies their own commits.
+    *   **Cryptographic Roots**: All checks fail-closed against adversarial attempts (expired replays, token key forgings, MAC mismatches).
+
 ---
 
 ## 3. Honest-Scope Slide

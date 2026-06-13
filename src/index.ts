@@ -16,7 +16,7 @@ export * from './wire.js';
 export * from './hmac.js';
 export * from './tier0.js';
 
-export const VERSION = '0.1.0';
+export const VERSION = '0.2.0';
 
 /**
  * The four-tier bifurcated identity hierarchy impute implements. Each tier is a

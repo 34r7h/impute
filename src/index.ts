@@ -9,6 +9,7 @@
  */
 
 export * from './types.js';
+export * from './keys.js';
 
 export const VERSION = '0.0.1';
 

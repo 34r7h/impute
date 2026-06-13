@@ -2,9 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AgentResolver } from '../src/ens/index.js';
 import type { EnsAgentMetadata } from '../src/ens/types.js';
+import type { PublicClient } from 'viem';
 
 test('ENS Agent Metadata formatting', async (t) => {
-  const resolver = new AgentResolver();
+  // Mock PublicClient just enough for formatRecords
+  const mockClient = {} as PublicClient;
+  const resolver = new AgentResolver(mockClient);
+  
   const mockMetadata: EnsAgentMetadata = {
     fingerprint: 'f1a2b3c4d5e6f7a8b9c0',
     capabilities: ['code.implement', 'crypto.sign'],

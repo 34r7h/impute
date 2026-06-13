@@ -1,4 +1,7 @@
-import { ENS_TEXT_KEYS, type EnsAgentMetadata } from './types.js';
+import type { EnsAgentMetadata } from './types.js';
+import { ENS_TEXT_KEYS } from './types.js';
+import { type PublicClient } from 'viem';
+import { normalize } from 'viem/ens';
 
 /**
  * Interface for an ENS subname registry that automates provisioning
@@ -23,14 +26,38 @@ export interface SubnameRegistry {
  * Client for resolving agent metadata from ENS.
  */
 export class AgentResolver {
+  private client: PublicClient;
+
+  constructor(client: PublicClient) {
+    this.client = client;
+  }
+
   /**
    * Fetches and parses agent metadata from ENS text records.
    * @param ensName Full ENS name to resolve.
    */
   async resolve(ensName: string): Promise<EnsAgentMetadata | null> {
-    if (!ensName) return null;
-    // TODO(B3): resolve via viem ENS text-record lookup (impute.fingerprint, impute.caps, ...).
-    return null;
+    try {
+      const name = normalize(ensName);
+      
+      const [fingerprint, capsStr, webhookUrl, x402Str] = await Promise.all([
+        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.FINGERPRINT }),
+        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.CAPABILITIES }),
+        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.WEBHOOK }),
+        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.X402 })
+      ]);
+
+      if (!fingerprint) return null;
+
+      return {
+        fingerprint,
+        capabilities: capsStr ? capsStr.split(',').map((c: string) => c.trim()).filter(Boolean) : [],
+        webhookUrl: webhookUrl || undefined,
+        x402Payable: x402Str === 'true'
+      };
+    } catch (e) {
+      return null;
+    }
   }
 
   /**

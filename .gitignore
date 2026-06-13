@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+
+# Secrets — never commit identity material
+*.key
+*.pem
+*.seed
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/

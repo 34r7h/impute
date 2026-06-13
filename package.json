@@ -1,0 +1,81 @@
+{
+  "name": "impute",
+  "version": "0.0.1",
+  "description": "Agentic identity protocol — a four-tier verifiable identity stack (ML-DSA agent keys, TEE attestation, zero-standing-privilege capability tokens, Blake3 execution MACs) for accountable AI-agent swarms.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "XMBL / handoff",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/34r7h/impute.git"
+  },
+  "homepage": "https://github.com/34r7h/impute#readme",
+  "bugs": {
+    "url": "https://github.com/34r7h/impute/issues"
+  },
+  "keywords": [
+    "ml-dsa",
+    "dilithium",
+    "fips-204",
+    "post-quantum",
+    "agent-identity",
+    "zero-standing-privilege",
+    "attestation",
+    "blake3",
+    "x402",
+    "ai-agents"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    },
+    "./keys": {
+      "types": "./dist/src/keys.d.ts",
+      "default": "./dist/src/keys.js"
+    },
+    "./attest": {
+      "types": "./dist/src/attest.d.ts",
+      "default": "./dist/src/attest.js"
+    },
+    "./zsp": {
+      "types": "./dist/src/zsp.d.ts",
+      "default": "./dist/src/zsp.js"
+    },
+    "./hmac": {
+      "types": "./dist/src/hmac.d.ts",
+      "default": "./dist/src/hmac.js"
+    },
+    "./wire": {
+      "types": "./dist/src/wire.d.ts",
+      "default": "./dist/src/wire.js"
+    },
+    "./verify": {
+      "types": "./dist/src/verify.d.ts",
+      "default": "./dist/src/verify.js"
+    }
+  },
+  "types": "./dist/src/index.d.ts",
+  "files": [
+    "dist/src",
+    "SPEC.md",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.6.1",
+    "@noble/post-quantum": "^0.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}

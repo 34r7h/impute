@@ -12,14 +12,17 @@ cryptographic audit trail falls out of operating correctly.
 - **Tier 3 — Execution.** Blake3-160 keyed MAC per micro-action.
 
 See [`SPEC.md`](./SPEC.md) for the full protocol. impute is **Apache-2.0** and
-**dependency-light** (only [`@noble/post-quantum`](https://github.com/paulmillr/noble-post-quantum)
-and [`@noble/hashes`](https://github.com/paulmillr/noble-hashes)) so any agent
-harness can adopt it.
+**dependency-light** — [`@noble/post-quantum`](https://github.com/paulmillr/noble-post-quantum)
+(ML-DSA) + [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (Blake3/SHA3), plus
+[`viem`](https://github.com/wevm/viem) for ENS resolution and Tier-0 secp256k1 verify — so any
+agent harness can adopt it.
 
-> **Status: v0.0.1, building tier-by-tier.** Tiers 2 and 3 (ZSP capability tokens,
-> Blake3 execution MACs) are fully real. ML-DSA Tier-1 keys are real. TEE
-> attestation and human MAYO are documented, structurally-complete simulations
-> (flagged `simulated: true`) — the production forward path, honestly scoped.
+> **Status: v0.1.0 — all four tiers shipped + verified.** Tier-0 human-approval verify,
+> Tier-1 ML-DSA keys (NIST ACVP FIPS-204 KAT-validated), Tier-2 ZSP capability tokens, and
+> Tier-3 Blake3-160 MACs are real, with the wire codec, ENS + ERC-8004 adapters, an adversarial
+> sweep (every attack fail-closed), and a runnable example. TEE attestation and human MAYO
+> remain documented, structurally-complete simulations (flagged `simulated: true`) — the honest
+> production forward path.
 
 ## Install
 
@@ -50,6 +53,25 @@ const cap = mintZspToken(agent, {
 console.log(authorizeZspToken(cap, { action: 'update_task', aud: 'handoff:request:963632e8' }));   // { ok: true }
 console.log(authorizeZspToken(cap, { action: 'delete_project', aud: 'handoff:request:963632e8' })); // { ok: false, reason: 'out-of-scope' }
 ```
+
+## Run the full four-tier flow
+
+```sh
+node examples/end-to-end.mjs   # human approval → ML-DSA identity → attestation → ZSP capability → Blake3 MAC → verify
+```
+
+## Modules
+
+`impute/keys` (Tier-1 ML-DSA) · `impute/attest` (TEE attestation) · `impute/zsp` (Tier-2
+capability tokens) · `impute/hmac` (Tier-3 Blake3 MAC) · `impute/wire` (canonical codec +
+`signature_scheme` byte) · `impute/tier0` (Tier-0 human clear-sign verify) — all re-exported
+from the package root.
+
+## Docs
+
+- [`SPEC.md`](./SPEC.md) — the protocol, tier by tier
+- [`docs/SETTLEMENT.md`](./docs/SETTLEMENT.md) — dual-rail x402 settlement (Base + Arc/Circle)
+- [`docs/LEDGER_TIER0.md`](./docs/LEDGER_TIER0.md) — Tier-0 / Ledger design + MAYO SDK feedback
 
 ## Why
 

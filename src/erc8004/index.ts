@@ -122,7 +122,7 @@ export class ReputationEngine {
     const options = {
       query,
       location: 'US',
-      maximumBytesBilled: '10000000000', // 10GB cap
+      maximumBytesBilled: '2000000000000', // 10GB cap
     };
 
     try {

@@ -56,6 +56,10 @@
     "./verify": {
       "types": "./dist/src/verify.d.ts",
       "default": "./dist/src/verify.js"
+    },
+    "./circle": {
+      "types": "./dist/src/circle/index.d.ts",
+      "default": "./dist/src/circle/index.js"
     }
   },
   "types": "./dist/src/index.d.ts",

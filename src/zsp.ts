@@ -11,6 +11,7 @@
  */
 
 import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
+import { canonicalBytes } from './wire.js';
 import { sign, verifyAgent, fingerprint } from './keys.js';
 import {
   AGENT_SCHEMES,
@@ -33,21 +34,9 @@ const PARAMS_FOR_SCHEME: Partial<Record<SignatureScheme, MlDsaParams>> = {
 /** Domain-separation context so a ZSP signature can never be replayed as another agent signature. */
 const ZSP_CONTEXT = new TextEncoder().encode('impute/zsp/v1');
 
-/**
- * Deterministic, sorted-key JSON encoding. Signer and verifier reconstruct the
- * exact same bytes regardless of property insertion order, so the signature is
- * over a canonical form. (Generalized into the `wire` codec in A4.)
- */
-function canonicalize(value: unknown): string {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (Array.isArray(value)) return '[' + value.map(canonicalize).join(',') + ']';
-  const obj = value as Record<string, unknown>;
-  return '{' + Object.keys(obj).sort().map((k) => JSON.stringify(k) + ':' + canonicalize(obj[k])).join(',') + '}';
-}
-
-/** The exact bytes that get signed for a ZSP token. */
+/** The exact bytes that get signed for a ZSP token (canonical codec lives in `wire`, SPEC §5). */
 export function canonicalTokenBytes(token: ZspToken): Uint8Array {
-  return new TextEncoder().encode(canonicalize(token));
+  return canonicalBytes(token);
 }
 
 /** Parameters for minting a capability. */

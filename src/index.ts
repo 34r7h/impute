@@ -15,6 +15,7 @@ export * from './zsp.js';
 export * from './wire.js';
 export * from './hmac.js';
 export * from './tier0.js';
+export * from './delegation/index.js';
 
 export const VERSION = '0.2.0';
 

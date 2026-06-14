@@ -68,6 +68,14 @@
     "./circle": {
       "types": "./dist/src/circle/index.d.ts",
       "default": "./dist/src/circle/index.js"
+    },
+    "./delegation": {
+      "types": "./dist/src/delegation/index.d.ts",
+      "default": "./dist/src/delegation/index.js"
+    },
+    "./custodial": {
+      "types": "./dist/src/custodial/index.d.ts",
+      "default": "./dist/src/custodial/index.js"
     }
   },
   "types": "./dist/src/index.d.ts",

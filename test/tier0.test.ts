@@ -1,7 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { privateKeyToAccount } from 'viem/accounts';
-import { buildApprovalMessage, verifyHumanApproval, requiresApproval, HUMAN_SCHEME, type ApprovalPayload } from '../src/tier0.js';
+import {
+  buildApprovalMessage, verifyHumanApproval, requiresApproval, HUMAN_SCHEME,
+  buildApprovalTypedData, verifyHumanApprovalEIP712,
+  TIER0_EIP712_DOMAIN, TIER0_EIP712_PRIMARY_TYPE, TIER0_ACTIONS,
+  type ApprovalPayload,
+} from '../src/tier0.js';
 import { SignatureScheme } from '../src/types.js';
 
 const NOW = 1_900_000_000;
@@ -42,4 +47,48 @@ test('a settlement approval binds the amount (clear-sign shows it)', async () =>
   assert.equal((await verifyHumanApproval(payload, sig, human.address, { now: NOW + 1 })).ok, true);
   // changing the amount invalidates the human's approval
   assert.equal((await verifyHumanApproval({ ...payload, amount: '500.00' }, sig, human.address, { now: NOW + 1 })).ok, false);
+});
+
+// ---- EIP-712 clear-sign path (Ledger SDK) ----------------------------------------------------------
+
+test('TIER0_ACTIONS are the agreed canonical action names', () => {
+  assert.equal(TIER0_ACTIONS.SPAWN_AGENT, 'spawn_agent');
+  assert.equal(TIER0_ACTIONS.CREATE_PROJECT, 'create_project');
+  assert.equal(TIER0_ACTIONS.DESIGNATE_ORCHESTRATOR, 'designate_orchestrator');
+  assert.equal(TIER0_ACTIONS.SET_SPENDING_LIMIT, 'set_spending_limit');
+  assert.equal(TIER0_ACTIONS.SETTLE_ABOVE_THRESHOLD, 'settle_above_threshold');
+});
+
+test('buildApprovalTypedData is a stable struct; absent amount becomes empty string + exp is uint64', () => {
+  const payload: ApprovalPayload = { action: 'spawn_agent', subject: 'ff00-agent', nonce: 'n1', exp: NOW + 300 };
+  const td = buildApprovalTypedData(payload);
+  assert.equal(td.domain.name, TIER0_EIP712_DOMAIN.name);
+  assert.equal(td.primaryType, TIER0_EIP712_PRIMARY_TYPE);
+  assert.equal(td.message.amount, '');                 // absent amount -> '' so the hash is deterministic
+  assert.equal(td.message.exp, BigInt(NOW + 300));     // exp serialized as a bigint (uint64)
+});
+
+test('a valid EIP-712 typed-data approval verifies; tamper, wrong-signer, expiry, and EIP-191-only are rejected', async () => {
+  const payload: ApprovalPayload = { action: TIER0_ACTIONS.SET_SPENDING_LIMIT, subject: 'agent-x', amount: '25.00', nonce: 'n712', exp: NOW + 300 };
+  const td = buildApprovalTypedData(payload);
+  // viem account signs the typed data exactly as a Ledger would (device clear-signs the same struct)
+  const sig = await human.signTypedData({ domain: td.domain, types: td.types as any, primaryType: td.primaryType, message: td.message as any });
+
+  assert.deepEqual(await verifyHumanApprovalEIP712(payload, sig, human.address, { now: NOW + 1 }), { ok: true });
+  // tampered amount -> recovers a different signer
+  assert.equal((await verifyHumanApprovalEIP712({ ...payload, amount: '2500.00' }, sig, human.address, { now: NOW + 1 })).ok, false);
+  // tampered subject -> rejected (subject binding is enforced by the hash)
+  assert.equal((await verifyHumanApprovalEIP712({ ...payload, subject: 'other-agent' }, sig, human.address, { now: NOW + 1 })).ok, false);
+  // wrong expected signer
+  assert.equal((await verifyHumanApprovalEIP712(payload, sig, other.address, { now: NOW + 1 })).ok, false);
+  // expired
+  assert.deepEqual(await verifyHumanApprovalEIP712(payload, sig, human.address, { now: NOW + 999 }), { ok: false, reason: 'expired' });
+  // the two schemes are NOT interchangeable: an EIP-712 sig must not pass the EIP-191 verifier
+  assert.equal((await verifyHumanApproval(payload, sig, human.address, { now: NOW + 1 })).ok, false);
+});
+
+test('an EIP-191 signature does not verify under the EIP-712 path (schemes are distinct)', async () => {
+  const payload: ApprovalPayload = { action: 'spawn_agent', subject: 'agent-y', nonce: 'n191', exp: NOW + 300 };
+  const sig191 = await human.signMessage({ message: buildApprovalMessage(payload) });
+  assert.equal((await verifyHumanApprovalEIP712(payload, sig191, human.address, { now: NOW + 1 })).ok, false);
 });

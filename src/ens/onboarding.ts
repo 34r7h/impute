@@ -1,6 +1,6 @@
 import { EnsSubnameRegistry } from './index.js';
 import { Erc8004RegistryClient } from '../erc8004/index.js';
-import { type EnsAgentMetadata } from './types.js';
+import { type EnsAgentMetadata, SOCNET_PERMANENCE_WARNING } from './types.js';
 
 /**
  * Orchestrates the combined ENS and ERC-8004 onboarding flow for agents.
@@ -58,6 +58,10 @@ export class AgentOnboarding {
 
   /**
    * E3: socnet.eth subdomain with PERMANENCE notice.
+   *
+   * The caller MUST display `SOCNET_PERMANENCE_WARNING` to the user and obtain
+   * explicit confirmation (acknowledgedPermanence = true) BEFORE calling this.
+   * Passing false (or omitting) will throw — no on-chain write occurs.
    */
   async registerSocnetSubdomain(
     label: string,
@@ -65,9 +69,16 @@ export class AgentOnboarding {
     acknowledgedPermanence: boolean
   ): Promise<{ ensName: string; erc8004Tx?: string }> {
     if (!acknowledgedPermanence) {
-      throw new Error("PERMANENCE WARNING: socnet.eth subdomains are permanent and cannot be changed. You must acknowledge this before proceeding.");
+      throw new Error(SOCNET_PERMANENCE_WARNING);
     }
     return this.onboard(label, "socnet.eth", metadata);
+  }
+
+  /**
+   * Returns the canonical permanence warning copy that UIs must display.
+   */
+  static get permanenceWarning(): string {
+    return SOCNET_PERMANENCE_WARNING;
   }
 
   /**

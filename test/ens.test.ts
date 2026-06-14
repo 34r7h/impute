@@ -47,3 +47,49 @@ test('ENS Agent Metadata formatting', async (t) => {
     assert.equal(resolved!.erc8004TokenId, '6568');
   });
 });
+
+test('E3 — socnet.eth subdomain PERMANENCE guard', async (t) => {
+  const { AgentOnboarding } = await import('../src/ens/onboarding.js');
+  const { SOCNET_PERMANENCE_WARNING } = await import('../src/ens/types.js');
+
+  // Mock registries that should NEVER be called when permanence is not acknowledged
+  const mockEnsRegistry = {
+    register: async () => { throw new Error('ENS register should not be called'); },
+    updateMetadata: async () => {}
+  } as any;
+  const mockErc8004 = {
+    register: async () => { throw new Error('ERC-8004 register should not be called'); },
+    getOwner: async () => null
+  } as any;
+
+  const onboarding = new AgentOnboarding(mockEnsRegistry, mockErc8004);
+
+  const metadata = {
+    fingerprint: 'e3test1234567890',
+    capabilities: ['test'],
+    x402Payable: false,
+  } as any;
+
+  await t.test('rejects when acknowledgedPermanence is false', async () => {
+    await assert.rejects(
+      () => onboarding.registerSocnetSubdomain('test-label', metadata, false),
+      (err: Error) => {
+        assert.ok(err.message.includes('PERMANENT'), 'Error must mention PERMANENT');
+        assert.ok(err.message.includes('IRREVERSIBLE'), 'Error must mention IRREVERSIBLE');
+        assert.ok(err.message.includes('CANNOT be changed'), 'Error must say CANNOT be changed');
+        return true;
+      }
+    );
+  });
+
+  await t.test('warning text matches canonical constant', () => {
+    assert.ok(SOCNET_PERMANENCE_WARNING.includes('PERMANENT'));
+    assert.ok(SOCNET_PERMANENCE_WARNING.includes('IRREVERSIBLE'));
+    assert.ok(SOCNET_PERMANENCE_WARNING.includes('CANNOT be changed'));
+    assert.ok(SOCNET_PERMANENCE_WARNING.includes('CANNOT be changed, transferred, or deleted'));
+  });
+
+  await t.test('static accessor returns the canonical warning', () => {
+    assert.equal(AgentOnboarding.permanenceWarning, SOCNET_PERMANENCE_WARNING);
+  });
+});

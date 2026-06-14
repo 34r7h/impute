@@ -1,5 +1,6 @@
 import type { EnsAgentMetadata } from './types.js';
-import { ENS_TEXT_KEYS } from './types.js';
+import { ENS_TEXT_KEYS, SOCNET_PERMANENCE_WARNING } from './types.js';
+export { SOCNET_PERMANENCE_WARNING };
 import { type PublicClient, type WalletClient } from 'viem';
 import { normalize, namehash, labelhash } from 'viem/ens';
 

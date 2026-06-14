@@ -28,15 +28,20 @@ export class AgentResolver {
    */
   async resolve(ensName: string): Promise<EnsAgentMetadata | null> {
     try {
-      const name = normalize(ensName);
-      
+      const node = namehash(normalize(ensName));
+      // Resolve the resolver straight from the ENS registry, then read text() on it directly. viem's
+      // high-level getEnsText goes through the UniversalResolver, which can return a stale/dead resolver for
+      // names served by a custom (non-UniversalResolver-compatible) resolver — exactly our case. Reading the
+      // registry's resolver and calling text() on it works against ANY conformant resolver.
+      const ENS_REGISTRY = '0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e' as const;
+      const resolverAddr = await this.client.readContract({
+        address: ENS_REGISTRY, abi: registryAbi as any, functionName: 'resolver', args: [node],
+      }) as `0x${string}`;
+      if (!resolverAddr || /^0x0+$/.test(resolverAddr)) return null;
+      const text = (key: string) => this.client.readContract({ address: resolverAddr, abi: resolverAbi as any, functionName: 'text', args: [node, key] }) as Promise<string>;
       const [fingerprint, capsStr, webhookUrl, x402Str, erc8004Str, reputationStr] = await Promise.all([
-        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.FINGERPRINT }),
-        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.CAPABILITIES }),
-        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.WEBHOOK }),
-        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.X402 }),
-        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.ERC8004 }),
-        this.client.getEnsText({ name, key: ENS_TEXT_KEYS.REPUTATION })
+        text(ENS_TEXT_KEYS.FINGERPRINT), text(ENS_TEXT_KEYS.CAPABILITIES), text(ENS_TEXT_KEYS.WEBHOOK),
+        text(ENS_TEXT_KEYS.X402), text(ENS_TEXT_KEYS.ERC8004), text(ENS_TEXT_KEYS.REPUTATION),
       ]);
 
       if (!fingerprint) return null;
@@ -67,6 +72,16 @@ export class AgentResolver {
 }
 
 const resolverAbi = [
+  {
+    name: 'text',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'node', type: 'bytes32' },
+      { name: 'key', type: 'string' },
+    ],
+    outputs: [{ type: 'string' }],
+  },
   {
     name: 'setText',
     type: 'function',
@@ -103,6 +118,13 @@ const registryAbi = [
       { name: 'ttl', type: 'uint64' }
     ],
     outputs: []
+  },
+  {
+    name: 'resolver',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'node', type: 'bytes32' }],
+    outputs: [{ type: 'address' }]
   }
 ] as const;
 

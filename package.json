@@ -1,6 +1,6 @@
 {
   "name": "impute",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Agentic identity protocol — a four-tier verifiable identity stack (ML-DSA agent keys, TEE attestation, zero-standing-privilege capability tokens, Blake3 execution MACs) for accountable AI-agent swarms.",
   "type": "module",
   "license": "Apache-2.0",

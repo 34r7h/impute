@@ -26,15 +26,21 @@ test('ENS Agent Metadata formatting', async (t) => {
   });
 
   await t.test('resolves and parses metadata from hierarchical ENS name correctly', async () => {
+    // resolve() reads the resolver from the ENS registry, then text() on it directly (robust against custom
+    // resolvers the viem UniversalResolver path mishandles) — so the mock answers readContract, not getEnsText.
+    const RES = '0x8FADE66B79cC9f707aB26799354482EB93a5B7dD';
+    const recs: Record<string, string> = {
+      'impute.fingerprint': 'f1a2b3c4d5e6f7a8b9c0',
+      'impute.caps': 'code.implement, crypto.sign',
+      'impute.webhook': 'https://tunnel.socnet.lol/t/handoff-gemini/',
+      'impute.x402': 'true',
+      'impute.erc8004': '6568',
+    };
     const resolverWithMock = new AgentResolver({
-      getEnsText: async ({ name, key }: any) => {
-        assert.equal(name, 'gemini.handoff.socnet.eth');
-        if (key === 'impute.fingerprint') return 'f1a2b3c4d5e6f7a8b9c0';
-        if (key === 'impute.caps') return 'code.implement, crypto.sign';
-        if (key === 'impute.webhook') return 'https://tunnel.socnet.lol/t/handoff-gemini/';
-        if (key === 'impute.x402') return 'true';
-        if (key === 'impute.erc8004') return '6568';
-        return null;
+      readContract: async ({ functionName, args }: any) => {
+        if (functionName === 'resolver') return RES;            // registry.resolver(node)
+        if (functionName === 'text') return recs[args[1]] ?? '';  // resolver.text(node, key)
+        return '';
       }
     } as any);
 

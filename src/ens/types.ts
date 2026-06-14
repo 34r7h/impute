@@ -22,6 +22,16 @@ export interface EnsAgentMetadata {
    * Boolean flag indicating if the agent accepts x402 (EIP-3009) nanopayments.
    */
   x402Payable: boolean;
+
+  /**
+   * ERC-8004 Identity NFT tokenId.
+   */
+  erc8004TokenId?: string;
+
+  /**
+   * Resolved reputation score (cached/snapshot).
+   */
+  reputationScore?: number;
 }
 
 /** Standard keys used for ENS text records in the impute protocol. */
@@ -30,4 +40,6 @@ export const ENS_TEXT_KEYS = {
   CAPABILITIES: 'impute.caps',
   WEBHOOK: 'impute.webhook',
   X402: 'impute.x402',
+  ERC8004: 'impute.erc8004',
+  REPUTATION: 'impute.reputation',
 } as const;

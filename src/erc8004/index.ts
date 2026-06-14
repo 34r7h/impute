@@ -1,7 +1,7 @@
 import { ImputeError } from '../types.js';
 import { type ReputationScore } from './types.js';
 import { BigQuery } from '@google-cloud/bigquery';
-import { type PublicClient, type WalletClient } from 'viem';
+import { type PublicClient, type WalletClient, type Address } from 'viem';
 
 /**
  * ERC-8004 Identity Registry ABI.
@@ -24,11 +24,9 @@ const identityAbi = [
 ] as const;
 
 /**
- * ERC-8004 Reputation Registry ABI.
+ * ERC-8004 Reputation Registry ABI (Corrected for giveFeedback).
  */
-// The canonical ERC-8004 ReputationRegistry (Sepolia 0x8004B663…) uses giveFeedback, keyed by the
-// agent's IDENTITY tokenId (agentId), and rejects self-feedback (a client rates the agent).
-const reputationAbi = [
+export const REPUTATION_ABI = [
   {
     name: 'giveFeedback',
     type: 'function',
@@ -37,29 +35,38 @@ const reputationAbi = [
       { name: 'agentId', type: 'uint256' },
       { name: 'value', type: 'int128' },
       { name: 'valueDecimals', type: 'uint8' },
-      { name: 'tag1', type: 'string' },
-      { name: 'tag2', type: 'string' },
+      { name: 'tag1', type: 'bytes32' },
+      { name: 'tag2', type: 'bytes32' },
       { name: 'endpoint', type: 'string' },
       { name: 'feedbackURI', type: 'string' },
       { name: 'feedbackHash', type: 'bytes32' }
     ],
     outputs: []
+  },
+  {
+    type: 'event',
+    name: 'FeedbackGiven',
+    inputs: [
+      { name: 'author', type: 'address', indexed: true },
+      { name: 'agentId', type: 'uint256', indexed: true },
+      { name: 'value', type: 'int128', indexed: false },
+      { name: 'tag1', type: 'bytes32', indexed: true }
+    ]
   }
 ] as const;
 
 export interface Erc8004Registry {
   register(idBlob: string): Promise<string>;
   getOwner(idBlob: string): Promise<string | null>;
-  /** Client → agent feedback on the canonical ReputationRegistry (keyed by 8004 tokenId; no self-feedback). */
-  giveFeedback(agentId: bigint, value: bigint, opts?: { valueDecimals?: number; tag1?: string; tag2?: string; endpoint?: string; feedbackURI?: string; feedbackHash?: `0x${string}` }): Promise<string>;
+  giveFeedback(agentId: bigint, score: number, commentURI: string): Promise<string>;
 }
 
 export class Erc8004RegistryClient implements Erc8004Registry {
   constructor(
     private publicClient: PublicClient,
     private walletClient: WalletClient,
-    private identityAddress: `0x${string}`,
-    private reputationAddress: `0x${string}`
+    private identityAddress: Address,
+    private reputationAddress: Address
   ) {}
 
   async register(idBlob: string): Promise<string> {
@@ -90,13 +97,22 @@ export class Erc8004RegistryClient implements Erc8004Registry {
     }
   }
 
-  async giveFeedback(agentId: bigint, value: bigint, opts: { valueDecimals?: number; tag1?: string; tag2?: string; endpoint?: string; feedbackURI?: string; feedbackHash?: `0x${string}` } = {}): Promise<string> {
+  async giveFeedback(agentId: bigint, score: number, commentURI: string): Promise<string> {
     const { request } = await this.publicClient.simulateContract({
       account: this.walletClient.account!,
       address: this.reputationAddress,
-      abi: reputationAbi,
+      abi: REPUTATION_ABI,
       functionName: 'giveFeedback',
-      args: [agentId, value, opts.valueDecimals ?? 0, opts.tag1 ?? '', opts.tag2 ?? '', opts.endpoint ?? '', opts.feedbackURI ?? '', opts.feedbackHash ?? `0x${'00'.repeat(32)}`]
+      args: [
+        agentId,
+        BigInt(score),
+        0,
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+        '',
+        commentURI,
+        '0x0000000000000000000000000000000000000000000000000000000000000000'
+      ]
     });
     const hash = await this.walletClient.writeContract(request);
     await this.publicClient.waitForTransactionReceipt({ hash });
@@ -113,12 +129,9 @@ export class ReputationEngine {
   constructor(
     private projectId: string = 'handoff-499317',
     private datasetId: string = 'impute',
-    private tableId: string = 'reputation',
-    keyFilename?: string
+    private tableId: string = 'reputation'
   ) {
-    // Authenticate with an explicit service-account key, or GOOGLE_APPLICATION_CREDENTIALS (ADC).
-    const kf = keyFilename ?? process.env.GOOGLE_APPLICATION_CREDENTIALS;
-    this.bigquery = new BigQuery({ projectId, ...(kf ? { keyFilename: kf } : {}) });
+    this.bigquery = new BigQuery({ projectId });
   }
 
   getReputationQuery(fingerprint?: string): string {
@@ -131,7 +144,6 @@ export class ReputationEngine {
         idBlob as fingerprint,
         COUNT(*) as verifiedTaskCount,
         AVG(score) as score,
-        -- Volume placeholder: in the real table this would be SUM(volume) from the indexed event
         CAST(0 AS STRING) as totalVolume 
       FROM \`${this.projectId}.${this.datasetId}.${this.tableId}\`
       ${filter}

@@ -45,3 +45,5 @@ export const TIERS = Object.freeze({
 } as const);
 
 export type TierLevel = keyof typeof TIERS;
+export * from './ens/index.js';
+export * from './erc8004/index.js';

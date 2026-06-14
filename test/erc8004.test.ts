@@ -3,18 +3,18 @@ import assert from 'node:assert/strict';
 import { ReputationEngine } from '../src/erc8004/index.js';
 
 test('ERC-8004 Reputation Engine', async (t) => {
-  const engine = new ReputationEngine();
+  const engine = new ReputationEngine('handoff-499317', 'impute', 'reputation');
 
   await t.test('generates query with filter when fingerprint is provided', () => {
     const q = engine.getReputationQuery('f1a2b3c4d5e6f7a8b9c0');
-    assert.match(q, /WHERE from_address = '0xf1a2b3c4d5e6f7a8b9c0'/);
-    assert.match(q, /bigquery-public-data\.crypto_ethereum\.traces/);
+    assert.match(q, /WHERE idBlob = 'f1a2b3c4d5e6f7a8b9c0'/);
+    assert.match(q, /handoff-499317\.impute\.reputation/);
   });
 
   await t.test('generates query without filter when fingerprint is omitted', () => {
     const q = engine.getReputationQuery();
-    assert.doesNotMatch(q, /WHERE from_address/);
-    assert.match(q, /bigquery-public-data\.crypto_ethereum\.traces/);
+    assert.doesNotMatch(q, /WHERE idBlob/);
+    assert.match(q, /handoff-499317\.impute\.reputation/);
   });
 
   await t.test('rejects malformed fingerprints to prevent SQL injection', () => {

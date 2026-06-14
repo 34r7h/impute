@@ -5,7 +5,6 @@ import type { EnsAgentMetadata } from '../src/ens/types.js';
 import type { PublicClient } from 'viem';
 
 test('ENS Agent Metadata formatting', async (t) => {
-  // Mock PublicClient just enough for formatRecords
   const mockClient = {} as PublicClient;
   const resolver = new AgentResolver(mockClient);
   
@@ -14,6 +13,7 @@ test('ENS Agent Metadata formatting', async (t) => {
     capabilities: ['code.implement', 'crypto.sign'],
     webhookUrl: 'https://tunnel.socnet.lol/t/handoff-gemini/',
     x402Payable: true,
+    erc8004TokenId: '6568'
   };
 
   await t.test('formats metadata into ENS text records correctly', () => {
@@ -22,39 +22,28 @@ test('ENS Agent Metadata formatting', async (t) => {
     assert.equal(records['impute.caps'], 'code.implement,crypto.sign');
     assert.equal(records['impute.webhook'], 'https://tunnel.socnet.lol/t/handoff-gemini/');
     assert.equal(records['impute.x402'], 'true');
+    assert.equal(records['impute.erc8004'], '6568');
   });
 
-  await t.test('resolves and parses metadata from ENS correctly', async () => {
-    const textRecords: Record<string, string> = {
-      'impute.fingerprint': 'f1a2b3c4d5e6f7a8b9c0',
-      'impute.caps': 'code.implement,crypto.sign',
-      'impute.webhook': 'https://tunnel.socnet.lol/t/handoff-gemini/',
-      'impute.x402': 'true'
-    };
-
-    const clientWithText = {
-      getEnsText: async ({ name, key }: { name: string; key: string }) => {
-        assert.equal(name, 'myagent.handoff.eth');
-        return textRecords[key] || null;
+  await t.test('resolves and parses metadata from hierarchical ENS name correctly', async () => {
+    const resolverWithMock = new AgentResolver({
+      getEnsText: async ({ name, key }: any) => {
+        assert.equal(name, 'gemini.handoff.socnet.eth');
+        if (key === 'impute.fingerprint') return 'f1a2b3c4d5e6f7a8b9c0';
+        if (key === 'impute.caps') return 'code.implement, crypto.sign';
+        if (key === 'impute.webhook') return 'https://tunnel.socnet.lol/t/handoff-gemini/';
+        if (key === 'impute.x402') return 'true';
+        if (key === 'impute.erc8004') return '6568';
+        return null;
       }
-    } as unknown as PublicClient;
+    } as any);
 
-    const testResolver = new AgentResolver(clientWithText);
-    const meta = await testResolver.resolve('myagent.handoff.eth');
-    assert.ok(meta);
-    assert.equal(meta.fingerprint, 'f1a2b3c4d5e6f7a8b9c0');
-    assert.deepEqual(meta.capabilities, ['code.implement', 'crypto.sign']);
-    assert.equal(meta.webhookUrl, 'https://tunnel.socnet.lol/t/handoff-gemini/');
-    assert.equal(meta.x402Payable, true);
-  });
-
-  await t.test('returns null if fingerprint is missing', async () => {
-    const clientEmpty = {
-      getEnsText: async () => null
-    } as unknown as PublicClient;
-
-    const testResolver = new AgentResolver(clientEmpty);
-    const meta = await testResolver.resolve('myagent.handoff.eth');
-    assert.equal(meta, null);
+    const resolved = await resolverWithMock.resolve('gemini.handoff.socnet.eth');
+    assert.ok(resolved);
+    assert.equal(resolved!.fingerprint, 'f1a2b3c4d5e6f7a8b9c0');
+    assert.deepEqual(resolved!.capabilities, ['code.implement', 'crypto.sign']);
+    assert.equal(resolved!.webhookUrl, 'https://tunnel.socnet.lol/t/handoff-gemini/');
+    assert.equal(resolved!.x402Payable, true);
+    assert.equal(resolved!.erc8004TokenId, '6568');
   });
 });

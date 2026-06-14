@@ -3,58 +3,70 @@ import { type ReputationScore } from './types.js';
 import { BigQuery } from '@google-cloud/bigquery';
 import { type PublicClient, type WalletClient } from 'viem';
 
-// A minimal ERC-8004 ABI (Draft). This assumes a simple registry: register(string) -> registers sender, getOwner(string) -> address
-const erc8004Abi = [
+/**
+ * ERC-8004 Identity Registry ABI.
+ */
+const identityAbi = [
   {
     name: 'register',
     type: 'function',
     stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'idBlob', type: 'string' }
-    ],
+    inputs: [{ name: 'idBlob', type: 'string' }],
     outputs: []
   },
   {
     name: 'getOwner',
     type: 'function',
     stateMutability: 'view',
-    inputs: [
-      { name: 'idBlob', type: 'string' }
-    ],
-    outputs: [
-      { name: 'owner', type: 'address' }
-    ]
+    inputs: [{ name: 'idBlob', type: 'string' }],
+    outputs: [{ name: 'owner', type: 'address' }]
   }
 ] as const;
 
 /**
- * Interface for ERC-8004 compliant registries.
+ * ERC-8004 Reputation Registry ABI.
  */
-export interface Erc8004Registry {
-  /**
-   * Registers a public identity on the ERC-8004 contract.
-   * @param idBlob The identity blob (usually fingerprint)
-   */
-  register(idBlob: string): Promise<string>; // returns tx hash
+// The canonical ERC-8004 ReputationRegistry (Sepolia 0x8004B663…) uses giveFeedback, keyed by the
+// agent's IDENTITY tokenId (agentId), and rejects self-feedback (a client rates the agent).
+const reputationAbi = [
+  {
+    name: 'giveFeedback',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'agentId', type: 'uint256' },
+      { name: 'value', type: 'int128' },
+      { name: 'valueDecimals', type: 'uint8' },
+      { name: 'tag1', type: 'string' },
+      { name: 'tag2', type: 'string' },
+      { name: 'endpoint', type: 'string' },
+      { name: 'feedbackURI', type: 'string' },
+      { name: 'feedbackHash', type: 'bytes32' }
+    ],
+    outputs: []
+  }
+] as const;
 
-  /**
-   * Fetches the owner of a registered identity blob.
-   */
+export interface Erc8004Registry {
+  register(idBlob: string): Promise<string>;
   getOwner(idBlob: string): Promise<string | null>;
+  /** Client → agent feedback on the canonical ReputationRegistry (keyed by 8004 tokenId; no self-feedback). */
+  giveFeedback(agentId: bigint, value: bigint, opts?: { valueDecimals?: number; tag1?: string; tag2?: string; endpoint?: string; feedbackURI?: string; feedbackHash?: `0x${string}` }): Promise<string>;
 }
 
 export class Erc8004RegistryClient implements Erc8004Registry {
   constructor(
     private publicClient: PublicClient,
     private walletClient: WalletClient,
-    private registryAddress: `0x${string}`
+    private identityAddress: `0x${string}`,
+    private reputationAddress: `0x${string}`
   ) {}
 
   async register(idBlob: string): Promise<string> {
     const { request } = await this.publicClient.simulateContract({
       account: this.walletClient.account!,
-      address: this.registryAddress,
-      abi: erc8004Abi,
+      address: this.identityAddress,
+      abi: identityAbi,
       functionName: 'register',
       args: [idBlob]
     });
@@ -66,8 +78,8 @@ export class Erc8004RegistryClient implements Erc8004Registry {
   async getOwner(idBlob: string): Promise<string | null> {
     try {
       const owner = await this.publicClient.readContract({
-        address: this.registryAddress,
-        abi: erc8004Abi,
+        address: this.identityAddress,
+        abi: identityAbi,
         functionName: 'getOwner',
         args: [idBlob]
       });
@@ -77,8 +89,20 @@ export class Erc8004RegistryClient implements Erc8004Registry {
       return null;
     }
   }
-}
 
+  async giveFeedback(agentId: bigint, value: bigint, opts: { valueDecimals?: number; tag1?: string; tag2?: string; endpoint?: string; feedbackURI?: string; feedbackHash?: `0x${string}` } = {}): Promise<string> {
+    const { request } = await this.publicClient.simulateContract({
+      account: this.walletClient.account!,
+      address: this.reputationAddress,
+      abi: reputationAbi,
+      functionName: 'giveFeedback',
+      args: [agentId, value, opts.valueDecimals ?? 0, opts.tag1 ?? '', opts.tag2 ?? '', opts.endpoint ?? '', opts.feedbackURI ?? '', opts.feedbackHash ?? `0x${'00'.repeat(32)}`]
+    });
+    const hash = await this.walletClient.writeContract(request);
+    await this.publicClient.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+}
 
 /**
  * BigQuery reputation engine.
@@ -86,59 +110,51 @@ export class Erc8004RegistryClient implements Erc8004Registry {
 export class ReputationEngine {
   private bigquery: BigQuery;
 
-  constructor(projectId: string = 'handoff-499317') {
-    this.bigquery = new BigQuery({ projectId });
+  constructor(
+    private projectId: string = 'handoff-499317',
+    private datasetId: string = 'impute',
+    private tableId: string = 'reputation',
+    keyFilename?: string
+  ) {
+    // Authenticate with an explicit service-account key, or GOOGLE_APPLICATION_CREDENTIALS (ADC).
+    const kf = keyFilename ?? process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    this.bigquery = new BigQuery({ projectId, ...(kf ? { keyFilename: kf } : {}) });
   }
 
-  /**
-   * Generates the SQL query used to calculate reputation from verified task events.
-   * Note: Verified tasks in handoff emit 'coord.task_verified' events to SOCNET.
-   */
   getReputationQuery(fingerprint?: string): string {
-    // Fingerprints are lowercase hex (impute/keys). Reject anything else so an
-    // attacker-supplied value can never be interpolated into the SQL string.
     if (fingerprint !== undefined && !/^[0-9a-f]{8,64}$/.test(fingerprint)) {
       throw new ImputeError('bad-fingerprint', 'reputation query fingerprint must be lowercase hex');
     }
-    const filter = fingerprint ? `WHERE from_address = '0x${fingerprint}'` : '';
+    const filter = fingerprint ? `WHERE idBlob = '${fingerprint}'` : '';
     return `
       SELECT 
-        from_address as fingerprint,
+        idBlob as fingerprint,
         COUNT(*) as verifiedTaskCount,
-        SUM(value) as totalVolume,
-        LOG(COUNT(*) + 1) * 10 as score -- Example logarithmic scoring
-      FROM \`bigquery-public-data.crypto_ethereum.traces\`
+        AVG(score) as score,
+        -- Volume placeholder: in the real table this would be SUM(volume) from the indexed event
+        CAST(0 AS STRING) as totalVolume 
+      FROM \`${this.projectId}.${this.datasetId}.${this.tableId}\`
       ${filter}
-      GROUP BY from_address
+      GROUP BY idBlob
       ORDER BY score DESC
+      LIMIT 100
     `.trim();
   }
 
-  /**
-   * Executes the reputation query against BigQuery.
-   */
   async fetchScores(fingerprint?: string): Promise<ReputationScore[]> {
     const query = this.getReputationQuery(fingerprint);
-    const options = {
-      query,
-      location: 'US',
-      maximumBytesBilled: '2000000000000', // 10GB cap
-    };
-
     try {
-      const [job] = await this.bigquery.createQueryJob(options);
+      const [job] = await this.bigquery.createQueryJob({ query, location: 'US', maximumBytesBilled: '100000000' });
       const [rows] = await job.getQueryResults();
-      
       return rows.map(row => ({
         fingerprint: row.fingerprint,
-        score: row.score,
-        verifiedTaskCount: row.verifiedTaskCount,
+        score: Number(row.score),
+        verifiedTaskCount: Number(row.verifiedTaskCount),
         totalVolume: row.totalVolume,
         updatedAt: new Date().toISOString()
       }));
     } catch (error: any) {
-      // In a real environment, handle auth/project missing errors gracefully
-      console.warn('BigQuery fetch failed (expected if lacking ADC credentials locally):', error.message);
+      console.warn('BigQuery fetch failed:', error.message);
       return [];
     }
   }
